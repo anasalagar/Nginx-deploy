@@ -1,15 +1,30 @@
 version: 0.2
+env:
+  shell: bash
+  variables:
+    #### below variables are defined in AWS codebuild service
+    ### REPOSITORY_URI is nothing but ECR Repository uri, SERVICE is nothing but application name, ENV is nothing but type of environment 
+     SERVICE: $SERVICE
+#      TASK_DEFINITION_NAME: $TASK_DEFINITION_NAME
+     AWS_REGION: $AWS_REGION
+#      EXECUTION_ROLE_ARN : $EXECUTION_ROLE_ARN
 phases:
   pre_build:
     commands:
-      - echo Logging in to Amazon ECR...
-      - aws --version
-      - $(aws ecr get-login --no-include-email --region ap-south-1)
+      - yum install -y aws-cli
+##      - yum install -y jq
+      #### Below AWS command is using for login into AWS ECR service 
+      - export ECR_REPOSITORY_URI="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com"  
+      - aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REPOSITORY_URI
   build:
     commands:
-      - echo Building the Docker image...
-      - docker build -t nginx:${CODEBUILD_BUILD_NUMBER} .
-      - echo Tagging the Docker image...
-      - docker tag nginx:${CODEBUILD_BUILD_NUMBER} 746256143333.dkr.ecr.ap-south-1.amazonaws.com/nginx:${CODEBUILD_BUILD_NUMBER}
-      - echo Pushing the Docker image to Amazon ECR...
-      - docker push 746256143333.dkr.ecr.ap-south-1.amazonaws.com/nginx:${CODEBUILD_BUILD_NUMBER}
+      ### building docker image
+      - docker build -t $ECR_REPOSITORY_URI/$SERVICE:$CODEBUILD_BUILD_NUMBER .
+      - docker tag $ECR_REPOSITORY_URI/$SERVICE:$CODEBUILD_BUILD_NUMBER $ECR_REPOSITORY_URI/$SERVICE:latest    
+  post_build:
+    commands:
+      ### pushing docker images to AWS ECR 
+      - docker push --all-tags $ECR_REPOSITORY_URI/$SERVICE
+    commands:
+      - printf '[{"name":"%s","imageUri":"%s"}]' $SERVICE $ECR_REPOSITORY_URI/$SERVICE:$CODEBUILD_BUILD_NUMBER > imagedefinition.json
+      - cat imagedefinition.json
